@@ -13,6 +13,8 @@ const char CHAR_SEP = ','; // pattern separator
 const int SERIAL_BAUD = 9600;
 const int PWM_FREQ = 250; // Hz
 
+#define DEBUG 1 // set to 1 to enable debugging logs
+
 /* Constants - Do not edit! */
 const unsigned int MAX_INT = 65535;
 // Max for EEPROM is 170, artificially limiting to lower to allow for more local RAM usage
@@ -38,6 +40,15 @@ const char DEMO1[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF";
 const char* const DEMO_PATTERNS[] PROGMEM = {
   DEMO1
 };
+
+/* Helper Macros */
+#if DEBUG == 1
+  #define debugPrint(...) Serial.print(__VA_ARGS__)
+  #define debugPrintln(...) Serial.println(__VA_ARGS__)
+#else
+  #define debugPrint(...)
+  #define debugPrintln(...)
+#endif
 
 /* Globals */
 MD_PWM pwm[3] = {MD_PWM(R_PIN), MD_PWM(G_PIN), MD_PWM(B_PIN)};
@@ -150,12 +161,12 @@ bool parsePattern(String input) {
     String term = copy.substring(0, copy.indexOf(CHAR_SEP));
     if (idx % 2 == 0) {
       patternColours[idx / 2] = hexToLong(term);
-      Serial.print("colour: ");
-      Serial.println(patternColours[idx/2], 16);
+      debugPrint("colour: ");
+      debugPrintln(patternColours[idx/2], 16);
     } else {
       patternDelay[(idx - 1) / 2] = term.toInt();
-      Serial.print("delay: ");
-      Serial.println(patternDelay[(idx-1)/2], 10);
+      debugPrint("delay: ");
+      debugPrintln(patternDelay[(idx-1)/2], 10);
     }
     idx++;
     if (idx/2 >= MAX_PATTERN_LEN) {
@@ -212,18 +223,18 @@ void displayNext() {
 }
 
 void display() {
-  Serial.println("DISPLAY");
+  debugPrintln("DISPLAY");
   unsigned long colour = patternColours[patternIndex];
   int red = (colour & 0xFF0000) / 0x10000;
   int green = (colour & 0x00FF00) / 0x100;
   int blue = (colour & 0x0000FF);
 
-  Serial.print(red, DEC);
-  Serial.print(",");
-  Serial.print(green, DEC);
-  Serial.print(",");
-  Serial.print(blue, DEC);
-  Serial.println("");
+  debugPrint(red, DEC);
+  debugPrint(",");
+  debugPrint(green, DEC);
+  debugPrint(",");
+  debugPrint(blue, DEC);
+  debugPrintln("");
 
   pwm[0].write(red);
   pwm[1].write(green);
@@ -251,21 +262,27 @@ void savePattern() {
 void loadPattern() {
   byte meta;
   EEPROM.get(EEPROM_META_CELL, meta);
-
+  
   if ((meta & META_PATTERN_SAVED) != META_PATTERN_SAVED) {
     return;
   }
 
   EEPROM.get(EEPROM_MODE_CELL, mode);
+  debugPrint("loaded mode");
+  debugPrintln(mode)
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
     // patternColours[i] = EEPROM.read(EEPROM_DATA_START + i);
     EEPROM.get(EEPROM_DATA_START + (i * sizeof(long)), patternColours[i]);
+    debugPrint("loaded colour");
+    debugPrintln(patternColours[i])
   }
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
     // patternDelay[i] = EEPROM.read(EEPROM_DATA_START + MAX_PATTERN_LEN + i);
     EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + i, patternDelay[i]);
+    debugPrint("loaded delay");
+    debugPrintln(patternDelay[i])
   }
 
   Serial.println("Pattern Loaded");
@@ -317,13 +334,13 @@ void setupTimer() {
 
 void setTimer(unsigned int intervalMs) {
   double ticks = intervalMs * ((double) TIMER_TICKS_PER_MS);
-  Serial.print("Set timer, requested ticks: ");
-  Serial.println(ticks);
+  debugPrint("Set timer, requested ticks: ");
+  debugPrintln(ticks);
 
   // Check if we overflow the 16-bit register, and if so then we need to handle these
   // longer values in a different way
   if (ticks > TIMER_TICKS_MAX) {
-    Serial.println("Ticks greater than max");
+    debugPrintln("Ticks greater than max");
     useTimerCount = true;
     timerCount = 0;
     ticks = calculateTicksAndSetTarget(ticks);
@@ -333,10 +350,10 @@ void setTimer(unsigned int intervalMs) {
 
   ticks = round(ticks);
 
-  Serial.print("Final ticks: ");
-  Serial.println(ticks);
-  Serial.print("Timer target: ");
-  Serial.println(timerTarget);
+  debugPrint("Final ticks: ");
+  debugPrintln(ticks);
+  debugPrint("Timer target: ");
+  debugPrintln(timerTarget);
 
   // Set the tick value at which we will interrupt
   OCR1A = (int) ticks;
@@ -350,16 +367,16 @@ unsigned long calculateTicksAndSetTarget(unsigned long requestedTicks) {
   long quotient = (long) ceil((double)requestedTicks / TIMER_TICKS_MAX);
   long remainder = requestedTicks % TIMER_TICKS_MAX;
   if (remainder == 0) {
-    Serial.println("rem of 0");
+    debugPrintln("rem of 0");
     ticks = TIMER_TICKS_MAX;
     timerTarget = quotient;
   } else {
     if ((remainder % quotient) <= REMAINDER_FUDGE_TICKS) {
-      Serial.println("q rem of 0");
+      debugPrintln("q rem of 0");
       ticks = round(((quotient - 1) * TIMER_TICKS_MAX + remainder)/quotient);
       timerTarget = quotient;
     } else {
-      Serial.println("garbage");
+      debugPrintln("garbage");
       ticks = calculateTicksAndSetTarget(requestedTicks - 1);
     }
   }
@@ -372,7 +389,7 @@ void resetTimer() {
 }
 
 void resetTimer(bool disableInterrupt) {
-  Serial.println("RESET TIMER");
+  debugPrintln("RESET TIMER");
   TCNT1 = 0; // Reset the tick count
   if (disableInterrupt || !useTimerCount || (useTimerCount && timerCount >= timerTarget)) {
     TIMSK1 &= B11111101; // Disable interrupts for the timer, will be re-enabled when the timer is set again
@@ -385,13 +402,13 @@ void enableTimerInterrupts() {
 
 void disableTimerInterrupts() {
   TIMSK1 &= B11111101;
-} 
+}
 
 /* Interrupt Handlers */
 
 // Timer 1 Interrupt Service Routine
 ISR(TIMER1_COMPA_vect){
-  Serial.println("ISR");
+  debugPrintln("ISR");
   if (useTimerCount)
     timerCount ++;
   resetTimer();
