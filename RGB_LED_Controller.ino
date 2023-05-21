@@ -24,6 +24,7 @@ const unsigned int META_PATTERN_SAVED = 0x1;
 
 const unsigned int EEPROM_META_CELL = 0;
 const unsigned int EEPROM_MODE_CELL = 1;
+const unsigned int EEPROM_LENGTH_CELL = 2; // 2-byte value, so actually includes cells 2 and 3
 const unsigned int EEPROM_DATA_START = 4;
 
 // Static Timer Math, this will get optimized at compile-time
@@ -247,15 +248,15 @@ void display() {
 void savePattern() {
   byte meta = META_PATTERN_SAVED;
   EEPROM.put(EEPROM_META_CELL, meta);
-
   EEPROM.put(EEPROM_MODE_CELL, mode);
+  EEPROM.put(EEPROM_LENGTH_CELL, patternLength);
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
     EEPROM.put(EEPROM_DATA_START + (i * sizeof(long)), patternColours[i]);
   }
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    EEPROM.put(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + i, patternDelay[i]);
+    EEPROM.put(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + (i * sizeof(int)), patternDelay[i]);
   }
 }
 
@@ -269,20 +270,20 @@ void loadPattern() {
 
   EEPROM.get(EEPROM_MODE_CELL, mode);
   debugPrint("loaded mode");
-  debugPrintln(mode)
+  debugPrintln(mode);
+
+  EEPROM.get(EEPROM_LENGTH_CELL, patternLength);
+  debugPrint("loaded length");
+  debugPrintln(patternLength);
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    // patternColours[i] = EEPROM.read(EEPROM_DATA_START + i);
     EEPROM.get(EEPROM_DATA_START + (i * sizeof(long)), patternColours[i]);
-    debugPrint("loaded colour");
-    debugPrintln(patternColours[i])
   }
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    // patternDelay[i] = EEPROM.read(EEPROM_DATA_START + MAX_PATTERN_LEN + i);
-    EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + i, patternDelay[i]);
+    EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + (i * sizeof(int)), patternDelay[i]);
     debugPrint("loaded delay");
-    debugPrintln(patternDelay[i])
+    debugPrintln(patternDelay[i]);
   }
 
   Serial.println("Pattern Loaded");
