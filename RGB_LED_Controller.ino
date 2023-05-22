@@ -37,8 +37,8 @@ const long TIMER_TICKS_MAX = (long) floor(MAX_MS_BEFORE_OVERFLOW * TIMER_TICKS_P
 const long REMAINDER_FUDGE_TICKS = 10 * TIMER_TICKS_PER_MS; // 10 millis
 
 // Demo Patterns
-const char DEMO1[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF";
-const char* const DEMO_PATTERNS[] PROGMEM = {
+const char DEMO1[] = "J,FF0000,2000,00FF00,2000,0000FF,2000";
+const char* const DEMO_PATTERNS[] = {
   DEMO1
 };
 
@@ -126,6 +126,8 @@ void loop() {
 
 /* Parser Methods */
 bool parse(String input) {
+  debugPrint("parse input:");
+  debugPrintln(input);
   char mode = input[0];
 
   switch (mode) {
