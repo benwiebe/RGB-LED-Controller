@@ -51,6 +51,18 @@ const char* const DEMO_PATTERNS[] PROGMEM = {
   #define debugPrintln(...)
 #endif
 
+/* Custom Data Types */
+struct RGB {
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
+
+struct ParsedRGB {
+  RGB rgb;
+  bool valid;
+};
+
 /* Globals */
 MD_PWM pwm[3] = {MD_PWM(R_PIN), MD_PWM(G_PIN), MD_PWM(B_PIN)};
 
@@ -60,9 +72,9 @@ unsigned int timerCount = 0;
 
 char mode = 'X';
 unsigned int patternLength = 0;
-unsigned long patternColours[MAX_PATTERN_LEN];
+RGB patternColours[MAX_PATTERN_LEN];
 unsigned int patternDelay[MAX_PATTERN_LEN];
-unsigned int patternIndex = 0;
+uint8_t patternIndex = 0;
 
 /* Standard Arduino Methods */
 
@@ -120,10 +132,8 @@ bool parse(String input) {
     case 'S':
       return parseStatic(input);
     case 'J':
-      return parsePattern(input);
     case 'F':
-      Serial.println("Mode F not implemented");
-      break;
+      return parsePattern(input);
     case 'D':
       return demoPattern(input);
     case 'C':
@@ -141,12 +151,12 @@ bool parse(String input) {
 
 bool parseStatic(String input) {
   String colourHex = input.substring(2, 9);
-  long colour = hexToLong(colourHex);
-  if (colour < 0) {
+  ParsedRGB colour = hexToRGB(colourHex);
+  if (!colour.valid) {
     return false;
   }
   patternLength = 1;
-  patternColours[0] = colour;
+  patternColours[0] = colour.rgb;
   patternDelay[0] = 10000;
   mode = 'S';
   return true;
@@ -157,13 +167,22 @@ bool parsePattern(String input) {
   if (copy[copy.length() - 1] != ',') {
     copy += ',';
   }
-  int idx = 0;
+  uint8_t idx = 0;
   while (copy.indexOf(CHAR_SEP) > -1) {
     String term = copy.substring(0, copy.indexOf(CHAR_SEP));
     if (idx % 2 == 0) {
-      patternColours[idx / 2] = hexToLong(term);
-      debugPrint("colour: ");
-      debugPrintln(patternColours[idx/2], 16);
+      ParsedRGB parsed = hexToRGB(term);
+      if (parsed.valid) {
+        patternColours[idx / 2] = parsed.rgb;
+        debugPrint("colour: ");
+        debugPrint(patternColours[idx/2].red, 16);
+        debugPrint(patternColours[idx/2].green, 16);
+        debugPrintln(patternColours[idx/2].blue, 16);
+      } else {
+        Serial.print("Invalid colour: ");
+        Serial.println(term);
+        return false;
+      }
     } else {
       patternDelay[(idx - 1) / 2] = term.toInt();
       debugPrint("delay: ");
@@ -188,6 +207,7 @@ bool demoPattern(String input) {
   if (demoIdx < sizeof(DEMO_PATTERNS)) {
     return parse(DEMO_PATTERNS[demoIdx]);
   }
+  Serial.println("Invalid Demo Pattern Number");
   return false;
 }
 
@@ -210,6 +230,19 @@ unsigned long hexToLong(String hex) {
   return result;
 }
 
+ParsedRGB hexToRGB(String hex) {
+  unsigned long value = hexToLong(hex);
+  if (value < 0) {
+    return {.rgb = {}, .valid = false};
+  }
+  RGB result;
+  result.red = (value & 0xFF0000) / 0x10000;
+  result.green = (value & 0x00FF00) / 0x100;
+  result.blue = (value & 0x0000FF);
+  
+  return {.rgb = result, .valid = true};
+}
+
 /* Pattern Display Methods */
 void displayInitial() {
   patternIndex = 0;
@@ -217,29 +250,30 @@ void displayInitial() {
 }
 
 void displayNext() {
-  if (patternLength > 1) {
-    patternIndex = (patternIndex + 1) % patternLength;
+  if (mode == 'J') {
+    if (patternLength > 1) {
+      patternIndex = (patternIndex + 1) % patternLength;
+    }
+    display();
+  } else if (mode == 'F') {
+
   }
-  display();
 }
 
 void display() {
   debugPrintln("DISPLAY");
-  unsigned long colour = patternColours[patternIndex];
-  int red = (colour & 0xFF0000) / 0x10000;
-  int green = (colour & 0x00FF00) / 0x100;
-  int blue = (colour & 0x0000FF);
+  RGB colour = patternColours[patternIndex];
 
-  debugPrint(red, DEC);
+  debugPrint(colour.red, DEC);
   debugPrint(",");
-  debugPrint(green, DEC);
+  debugPrint(colour.green, DEC);
   debugPrint(",");
-  debugPrint(blue, DEC);
+  debugPrint(colour.blue, DEC);
   debugPrintln("");
 
-  pwm[0].write(red);
-  pwm[1].write(green);
-  pwm[2].write(blue);
+  pwm[0].write(colour.red);
+  pwm[1].write(colour.green);
+  pwm[2].write(colour.blue);
 
   setTimer(patternDelay[patternIndex]);
 }
@@ -252,11 +286,11 @@ void savePattern() {
   EEPROM.put(EEPROM_LENGTH_CELL, patternLength);
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    EEPROM.put(EEPROM_DATA_START + (i * sizeof(long)), patternColours[i]);
+    EEPROM.put(EEPROM_DATA_START + (i * sizeof(RGB)), patternColours[i]);
   }
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    EEPROM.put(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + (i * sizeof(int)), patternDelay[i]);
+    EEPROM.put(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(RGB)) + (i * sizeof(int)), patternDelay[i]);
   }
 }
 
@@ -277,11 +311,11 @@ void loadPattern() {
   debugPrintln(patternLength);
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    EEPROM.get(EEPROM_DATA_START + (i * sizeof(long)), patternColours[i]);
+    EEPROM.get(EEPROM_DATA_START + (i * sizeof(RGB)), patternColours[i]);
   }
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
-    EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(long)) + (i * sizeof(int)), patternDelay[i]);
+    EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(RGB)) + (i * sizeof(int)), patternDelay[i]);
     debugPrint("loaded delay");
     debugPrintln(patternDelay[i]);
   }
@@ -365,8 +399,8 @@ void setTimer(unsigned int intervalMs) {
 
 unsigned long calculateTicksAndSetTarget(unsigned long requestedTicks) {
   unsigned long ticks;
-  long quotient = (long) ceil((double)requestedTicks / TIMER_TICKS_MAX);
-  long remainder = requestedTicks % TIMER_TICKS_MAX;
+  unsigned long quotient = (unsigned long) ceil((double)requestedTicks / TIMER_TICKS_MAX);
+  unsigned int remainder = requestedTicks % TIMER_TICKS_MAX;
   if (remainder == 0) {
     debugPrintln("rem of 0");
     ticks = TIMER_TICKS_MAX;
