@@ -13,7 +13,7 @@ const char CHAR_SEP = ','; // pattern separator
 const int SERIAL_BAUD = 9600;
 const int PWM_FREQ = 250; // Hz
 
-#define DEBUG 1 // set to 1 to enable debugging logs
+#define DEBUG 1 // set to 1 to enable debugging logs. This has a negative performance impact!!
 
 /* Constants - Do not edit! */
 const unsigned int MAX_INT = 65535;
@@ -37,8 +37,8 @@ const long TIMER_TICKS_MAX = (long) floor(MAX_MS_BEFORE_OVERFLOW * TIMER_TICKS_P
 const long REMAINDER_FUDGE_TICKS = 10 * TIMER_TICKS_PER_MS; // 10 millis
 
 // Demo Patterns
-const char DEMO1[] = "J,FF0000,2000,00FF00,2000,0000FF,2000";
-const char* const DEMO_PATTERNS[] = {
+const char DEMO1[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF,2000";
+const char* const DEMO_PATTERNS[] PROGMEM = {
   DEMO1
 };
 
@@ -90,13 +90,13 @@ void setup() {
   {
     if (!pwm[i].begin(PWM_FREQ))
     {
-      Serial.print("\nUnable to initialize pwm #");
+      Serial.print(F("\nUnable to initialize pwm #"));
       Serial.println(i, DEC);
     }
   }
 
   setupTimer();
-  Serial.println("== Setup Complete ==");
+  Serial.println(F("== Setup Complete =="));
 
   // Load any saved pattern
   loadPattern();
@@ -106,17 +106,17 @@ void loop() {
   if (Serial.available()) {
     String input = Serial.readString();
     input = input.substring(0, input.length()-1); //drop newline char
-    Serial.print("> ");
+    Serial.print(F("> "));
     Serial.println(input);
     disableTimerInterrupts();
     if (parse(input)) {
-      Serial.println("OK");
+      Serial.println(F("OK"));
       if (mode != 'X') {
         resetTimer(true);
         displayInitial();
       }
     } else {
-      Serial.println("ERROR");
+      Serial.println(F("ERROR"));
     }
     if (mode != 'X') {
       enableTimerInterrupts();
@@ -126,7 +126,7 @@ void loop() {
 
 /* Parser Methods */
 bool parse(String input) {
-  debugPrint("parse input:");
+  debugPrint(F("parse input:"));
   debugPrintln(input);
   char mode = input[0];
 
@@ -176,23 +176,23 @@ bool parsePattern(String input) {
       ParsedRGB parsed = hexToRGB(term);
       if (parsed.valid) {
         patternColours[idx / 2] = parsed.rgb;
-        debugPrint("colour: ");
+        debugPrint(F("colour: "));
         debugPrint(patternColours[idx/2].red, 16);
         debugPrint(patternColours[idx/2].green, 16);
         debugPrintln(patternColours[idx/2].blue, 16);
       } else {
-        Serial.print("Invalid colour: ");
+        Serial.print(F("Invalid colour: "));
         Serial.println(term);
         return false;
       }
     } else {
       patternDelay[(idx - 1) / 2] = term.toInt();
-      debugPrint("delay: ");
+      debugPrint(F("delay: "));
       debugPrintln(patternDelay[(idx-1)/2], 10);
     }
     idx++;
     if (idx/2 >= MAX_PATTERN_LEN) {
-      Serial.print("PATTERN TOO LONG, MAX:");
+      Serial.print(F("PATTERN TOO LONG, MAX:"));
       Serial.println(MAX_PATTERN_LEN, DEC);
       mode = 'X';
       return false;
@@ -207,9 +207,11 @@ bool parsePattern(String input) {
 bool demoPattern(String input) {
   int demoIdx = input.substring(1).toInt();
   if (demoIdx < sizeof(DEMO_PATTERNS)) {
-    return parse(DEMO_PATTERNS[demoIdx]);
+    char pattern[1000];
+    strcpy_P(pattern, (char *)pgm_read_word(&(DEMO_PATTERNS[demoIdx])));  // Necessary casts and dereferencing, just copy.
+    return parse(pattern);
   }
-  Serial.println("Invalid Demo Pattern Number");
+  Serial.println(F("Invalid Demo Pattern Number"));
   return false;
 }
 
@@ -263,15 +265,15 @@ void displayNext() {
 }
 
 void display() {
-  debugPrintln("DISPLAY");
+  debugPrintln(F("DISPLAY"));
   RGB colour = patternColours[patternIndex];
 
   debugPrint(colour.red, DEC);
-  debugPrint(",");
+  debugPrint(F(","));
   debugPrint(colour.green, DEC);
-  debugPrint(",");
+  debugPrint(F(","));
   debugPrint(colour.blue, DEC);
-  debugPrintln("");
+  debugPrintln(F(""));
 
   pwm[0].write(colour.red);
   pwm[1].write(colour.green);
@@ -305,11 +307,11 @@ void loadPattern() {
   }
 
   EEPROM.get(EEPROM_MODE_CELL, mode);
-  debugPrint("loaded mode");
+  debugPrint(F("loaded mode"));
   debugPrintln(mode);
 
   EEPROM.get(EEPROM_LENGTH_CELL, patternLength);
-  debugPrint("loaded length");
+  debugPrint(F("loaded length"));
   debugPrintln(patternLength);
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
@@ -318,11 +320,11 @@ void loadPattern() {
 
   for (int i = 0; i < MAX_PATTERN_LEN; i++) {
     EEPROM.get(EEPROM_DATA_START + (MAX_PATTERN_LEN * sizeof(RGB)) + (i * sizeof(int)), patternDelay[i]);
-    debugPrint("loaded delay");
+    debugPrint(F("loaded delay"));
     debugPrintln(patternDelay[i]);
   }
 
-  Serial.println("Pattern Loaded");
+  Serial.println(F("Pattern Loaded"));
   displayInitial();
 }
 
@@ -330,22 +332,22 @@ void resetEeprom() {
   for (int i=0; i<EEPROM.length(); i++) {
     EEPROM.put(i, 0);
   }
-  Serial.println("EEPROM Reset");
+  Serial.println(F("EEPROM Reset"));
 }
 
 /* Other Input Methods */
 void printHelp() {
-  Serial.println("== LED CONTROLLER HELP ==");
-  Serial.println("Input always starts with a \"key letter\" to specify the command.");
-  Serial.println("Commands:");
-  Serial.println("S - Display static colour (eg. \"S,FF000\")");
-  Serial.println("J - Display jump pattern (see documentation)");
-  Serial.println("F - Display fade pattern (see documentation)");
-  Serial.println("D - Show a demo pattern (eg. \"D0\"). See docs for list");
-  Serial.println("C - Commit (save) the current pattern for next power on");
-  Serial.println("R - Reset (clear) the saved pattern");
-  Serial.println("H - Show this help info");
-  Serial.println("=========================");
+  Serial.println(F("== LED CONTROLLER HELP =="));
+  Serial.println(F("Input always starts with a \"key letter\" to specify the command."));
+  Serial.println(F("Commands:"));
+  Serial.println(F("S - Display static colour (eg. \"S,FF000\")"));
+  Serial.println(F("J - Display jump pattern (see documentation)"));
+  Serial.println(F("F - Display fade pattern (see documentation)"));
+  Serial.println(F("D - Show a demo pattern (eg. \"D0\"). See docs for list"));
+  Serial.println(F("C - Commit (save) the current pattern for next power on"));
+  Serial.println(F("R - Reset (clear) the saved pattern"));
+  Serial.println(F("H - Show this help info"));
+  Serial.println(F("========================="));
 }
 
 
@@ -371,13 +373,13 @@ void setupTimer() {
 
 void setTimer(unsigned int intervalMs) {
   double ticks = intervalMs * ((double) TIMER_TICKS_PER_MS);
-  debugPrint("Set timer, requested ticks: ");
+  debugPrint(F("Set timer, requested ticks: "));
   debugPrintln(ticks);
 
   // Check if we overflow the 16-bit register, and if so then we need to handle these
   // longer values in a different way
   if (ticks > TIMER_TICKS_MAX) {
-    debugPrintln("Ticks greater than max");
+    debugPrintln(F("Ticks greater than max"));
     useTimerCount = true;
     timerCount = 0;
     ticks = calculateTicksAndSetTarget(ticks);
@@ -387,9 +389,9 @@ void setTimer(unsigned int intervalMs) {
 
   ticks = round(ticks);
 
-  debugPrint("Final ticks: ");
+  debugPrint(F("Final ticks: "));
   debugPrintln(ticks);
-  debugPrint("Timer target: ");
+  debugPrint(F("Timer target: "));
   debugPrintln(timerTarget);
 
   // Set the tick value at which we will interrupt
@@ -404,16 +406,16 @@ unsigned long calculateTicksAndSetTarget(unsigned long requestedTicks) {
   unsigned long quotient = (unsigned long) ceil((double)requestedTicks / TIMER_TICKS_MAX);
   unsigned int remainder = requestedTicks % TIMER_TICKS_MAX;
   if (remainder == 0) {
-    debugPrintln("rem of 0");
+    debugPrintln(F("rem of 0"));
     ticks = TIMER_TICKS_MAX;
     timerTarget = quotient;
   } else {
     if ((remainder % quotient) <= REMAINDER_FUDGE_TICKS) {
-      debugPrintln("q rem of 0");
+      debugPrintln(F("q rem of 0"));
       ticks = round(((quotient - 1) * TIMER_TICKS_MAX + remainder)/quotient);
       timerTarget = quotient;
     } else {
-      debugPrintln("garbage");
+      debugPrintln(F("garbage"));
       ticks = calculateTicksAndSetTarget(requestedTicks - 1);
     }
   }
@@ -426,7 +428,7 @@ void resetTimer() {
 }
 
 void resetTimer(bool disableInterrupt) {
-  debugPrintln("RESET TIMER");
+  debugPrintln(F("RESET TIMER"));
   TCNT1 = 0; // Reset the tick count
   if (disableInterrupt || !useTimerCount || (useTimerCount && timerCount >= timerTarget)) {
     TIMSK1 &= B11111101; // Disable interrupts for the timer, will be re-enabled when the timer is set again
@@ -445,7 +447,7 @@ void disableTimerInterrupts() {
 
 // Timer 1 Interrupt Service Routine
 ISR(TIMER1_COMPA_vect){
-  debugPrintln("ISR");
+  debugPrintln(F("ISR"));
   if (useTimerCount)
     timerCount ++;
   resetTimer();

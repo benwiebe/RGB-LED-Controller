@@ -26,6 +26,9 @@ Some simple configuration options are provided at the top of the program:
 - PWM_FREQ: The frequency (in Hz) of the PWM used for the LED pins. 250Hz is the default which provides a mostly
   flicker-free experience and a good balance of performance. You can adjust this to reduce flicker or improve
   responsiveness depending on your application.
+- DEBUG: Whether to send additional logs over serial, useful for debugging issues as the name implies. This has a
+         pretty significant negative impact on the performance of the software, as an example using delays less
+         than ~200ms may cause inconsistent behaviour or lock-ups.
 
 ## Usage Instructions
 ### Modes
