@@ -13,11 +13,13 @@ const char CHAR_SEP = ','; // pattern separator
 const int SERIAL_BAUD = 9600;
 const int PWM_FREQ = 250; // Hz
 
-#define DEBUG 1 // set to 1 to enable debugging logs. This has a negative performance impact!!
+const uint16_t FADE_STEPS = 256;
+
+#define DEBUG 0 // set to 1 to enable debugging logs. This has a negative performance impact!!
 
 /* Constants - Do not edit! */
 const unsigned int MAX_INT = 65535;
-// Max for EEPROM is 170, artificially limiting to lower to allow for more local RAM usage
+// Max for EEPROM is 204, artificially limiting to lower to allow for more local RAM usage
 #define MAX_PATTERN_LEN 50 // Needs to be a macro to make the compiler happy
 
 const unsigned int META_PATTERN_SAVED = 0x1;
@@ -37,9 +39,13 @@ const long TIMER_TICKS_MAX = (long) floor(MAX_MS_BEFORE_OVERFLOW * TIMER_TICKS_P
 const long REMAINDER_FUDGE_TICKS = 10 * TIMER_TICKS_PER_MS; // 10 millis
 
 // Demo Patterns
-const char DEMO1[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF,2000";
+const char DEMO0[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF,2000";
+const char DEMO1[] PROGMEM = "J,FF0000,2000,00FF00,2000,0000FF,2000,FF00FF,2000,FFFF00,2000,00FFFF,2000,FFFFFF,2000";
+const char DEMO2[] PROGMEM = "F,FF0000,2000,00FF00,2000,0000FF,2000";
 const char* const DEMO_PATTERNS[] PROGMEM = {
-  DEMO1
+  DEMO0,
+  DEMO1,
+  DEMO2
 };
 
 /* Helper Macros */
@@ -63,12 +69,30 @@ struct ParsedRGB {
   bool valid;
 };
 
+struct RGBDelta {
+  int16_t red;
+  int16_t green;
+  int16_t blue;
+};
+
+/* Debug Helpers */
+void debugDelay() {
+  if (DEBUG) {
+    debugPrintln(F("Delaying to flush logs"));
+    delay(2000);
+  }
+}
+
 /* Globals */
 MD_PWM pwm[3] = {MD_PWM(R_PIN), MD_PWM(G_PIN), MD_PWM(B_PIN)};
 
 bool useTimerCount = false;
 unsigned int timerTarget = 0;
 unsigned int timerCount = 0;
+
+RGB currentFadeOutput = {.red = 0, .green = 0, .blue = 0};
+RGBDelta fadeStepDelta = {.red = 0, .green = 0, .blue = 0};
+uint16_t currentFadeStep = 0;
 
 char mode = 'X';
 unsigned int patternLength = 0;
@@ -111,6 +135,8 @@ void loop() {
     disableTimerInterrupts();
     if (parse(input)) {
       Serial.println(F("OK"));
+      debugDelay();
+
       if (mode != 'X') {
         resetTimer(true);
         displayInitial();
@@ -207,7 +233,7 @@ bool parsePattern(String input) {
 bool demoPattern(String input) {
   int demoIdx = input.substring(1).toInt();
   if (demoIdx < sizeof(DEMO_PATTERNS)) {
-    char pattern[1000];
+    char pattern[700];
     strcpy_P(pattern, (char *)pgm_read_word(&(DEMO_PATTERNS[demoIdx])));  // Necessary casts and dereferencing, just copy.
     return parse(pattern);
   }
@@ -250,6 +276,10 @@ ParsedRGB hexToRGB(String hex) {
 /* Pattern Display Methods */
 void displayInitial() {
   patternIndex = 0;
+  if (mode == 'F') {
+    currentFadeStep = 0;
+    calculateFadeDelta();
+  }
   display();
 }
 
@@ -258,28 +288,96 @@ void displayNext() {
     if (patternLength > 1) {
       patternIndex = (patternIndex + 1) % patternLength;
     }
-    display();
   } else if (mode == 'F') {
-
+    currentFadeStep ++;
+    if (currentFadeStep == FADE_STEPS) {
+      patternIndex = (patternIndex + 1) % patternLength;
+      currentFadeStep = 0;
+      calculateFadeDelta();
+    }
   }
+  display();
 }
 
 void display() {
   debugPrintln(F("DISPLAY"));
-  RGB colour = patternColours[patternIndex];
-
+  RGB colour;
+  debugDelay();
+  if (mode == 'F') {
+    if (currentFadeStep == 0) {
+      debugPrintln(F("step 0"));
+      debugDelay();
+      colour = patternColours[patternIndex];
+      debugDelay();
+    } else {
+      debugPrintln(F("step not 0"));
+      colour = {
+        .red = currentFadeOutput.red + fadeStepDelta.red,
+        .green = currentFadeOutput.green + fadeStepDelta.green,
+        .blue = currentFadeOutput.blue + fadeStepDelta.blue
+      };
+      debugDelay();
+    }
+    currentFadeOutput = colour;
+  } else {
+    colour = patternColours[patternIndex];
+  }
+  debugDelay();
   debugPrint(colour.red, DEC);
   debugPrint(F(","));
   debugPrint(colour.green, DEC);
   debugPrint(F(","));
   debugPrint(colour.blue, DEC);
   debugPrintln(F(""));
+  debugDelay();
 
   pwm[0].write(colour.red);
   pwm[1].write(colour.green);
   pwm[2].write(colour.blue);
 
-  setTimer(patternDelay[patternIndex]);
+  debugPrintln(F("rgb written"));
+  debugDelay();
+  
+  if (mode == 'F') {
+    int calc = (int) round((double)patternDelay[patternIndex]/(double)FADE_STEPS);
+    setTimer((unsigned int) calc);
+  } else {
+    setTimer(patternDelay[patternIndex]);
+  }
+}
+
+void calculateFadeDelta() {
+  RGB startColour = patternColours[patternIndex];
+  RGB endColour = patternColours[(patternIndex + 1) % patternLength];
+
+  int16_t redDelta, greenDelta, blueDelta;
+  int16_t calc;
+
+  calc = ((int16_t) endColour.red) - ((int16_t) startColour.red); //(endColour.red > startColour.red) ? (endColour.red - startColour.red) : (startColour.red - endColour.red);
+  calc = (int16_t) round(((double)calc)/(double)FADE_STEPS);
+  redDelta = (int16_t) calc;
+  debugPrintln(F("red done"));
+  debugDelay();
+
+  calc = ((int16_t) endColour.green) - ((int16_t) startColour.green); //(endColour.green > startColour.green) ? (endColour.green - startColour.green) : (startColour.green - endColour.green);
+  calc = (int16_t) round(((double)calc)/(double)FADE_STEPS);
+  greenDelta = (int16_t) calc;
+  debugPrintln(F("green done"));
+  debugDelay();
+
+  calc = ((int16_t) endColour.blue) - ((int16_t) startColour.blue); //(endColour.blue > startColour.blue) ? (endColour.blue - startColour.blue) : (startColour.blue - endColour.blue);
+  calc = (int16_t) round(((double)calc)/(double)FADE_STEPS);
+  blueDelta = (int16_t) calc;
+  debugPrintln(F("blue done"));
+  debugDelay();
+
+  fadeStepDelta = {
+    .red = redDelta,
+    .green = greenDelta,
+    .blue = blueDelta
+  };
+  debugPrintln("fade deltas calculated");
+  debugDelay();
 }
 
 /* EEPROM Methods */
@@ -372,6 +470,8 @@ void setupTimer() {
 }
 
 void setTimer(unsigned int intervalMs) {
+  debugPrint(F("Set timer, requested ms: "));
+  debugPrintln(intervalMs);
   double ticks = intervalMs * ((double) TIMER_TICKS_PER_MS);
   debugPrint(F("Set timer, requested ticks: "));
   debugPrintln(ticks);
@@ -415,7 +515,7 @@ unsigned long calculateTicksAndSetTarget(unsigned long requestedTicks) {
       ticks = round(((quotient - 1) * TIMER_TICKS_MAX + remainder)/quotient);
       timerTarget = quotient;
     } else {
-      debugPrintln(F("garbage"));
+      debugPrintln(F("q rem not 0"));
       ticks = calculateTicksAndSetTarget(requestedTicks - 1);
     }
   }

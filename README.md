@@ -53,6 +53,8 @@ To use a demo pattern, input the command "D#", where the "#" symbol is replaced 
 wish to display. The list of supported patterns is:
 
 0. 2 seconds each of all red, all green, all blue in a jump mode. Good for testing an LED strip.
+1. 2 seconds each of red, green, blue, yellow, cyan, magenta, and white in a jump mode. Good for testing an LED strip.
+2. 2 second fades between red, green, and blue, creating a rainbow.
 
 ### Saving Patterns
 Once you have a pattern that you like, you can save (or "commit") it for use every time your board powers-on. To do this,
